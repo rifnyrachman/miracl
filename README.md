@@ -1,4 +1,4 @@
-# MIRACL Supplementary Code for AAAI Submission
+# MIRACL: Hierarchical Diversity-Aware Meta-Reinforcement Learning for Sustainable Multi-Echelon Supply Chain Optimisation
 
 This supplementary material provides the main components of our **MIRACL method** and the Meta-MORL benchmarks described in the paper, implemented on a **simple supply chain environment**.
 
