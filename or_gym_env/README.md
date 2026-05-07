@@ -1,605 +1,336 @@
-# OR-Gym-style Supply Chain Environments
+# OR-Gym Simple Supply Chain Environment for MIRACL
 
-This folder contains three standalone Python environment files that replace the previous Messiah-based supply-chain state generators with Gymnasium / OR-Gym-style environments.
+This directory contains an OR-Gym/Gymnasium-style replacement for the original Messiah-based simple supply-chain environment used in the MIRACL experiments. The environment is implemented in `simple_state.py` and is designed to work with the accompanying notebook `metah_s2_5000ts_orgym.ipynb`.
 
-The environments are built around your Excel workbook `data_input_v2.xlsx` and keep the same simple, moderate, and complex network structures used in your MIRACL experiments.
+The goal is to provide a runnable, shareable simple supply-chain benchmark for meta-training, fine-tuning, and evaluation without requiring the proprietary Messiah simulator.
 
 ## Files
 
 ```text
-.
-├── data_input_v2.xlsx          # Excel workbook with costs, emissions, inventory, and demand
-├── simple_state.py             # Simple supply-chain environment
-├── moderate_state.py           # Moderate supply-chain environment
-├── complex_state.py            # Complex supply-chain environment
-└── README.md                   # This guide
+simple_state.py                  # OR-Gym-style simple SC environment
+metah_s2_5000ts_orgym.ipynb      # Notebook for MIRACL meta-training + SB3 fine-tuning
+README.md                        # This file
 ```
 
-Each `.py` file is standalone. You can copy only the environment file you need, but keeping `data_input_v2.xlsx` beside it is recommended so the latest Excel parameters are used.
+Optional:
 
-## What each file provides
+```text
+data_input_v2.xlsx               # Optional workbook with SC costs, emissions, inventory, and demand
+```
 
-| File | Meta-training class | Fine-tuning class | Aliases | Action size | Default observation size |
-|---|---:|---:|---|---:|---:|
-| `simple_state.py` | `SimpleSupplyChainEnv` | `FTSimpleSupplyChainEnv` | `SimpleState`, `TestSimpleState` | 8 | 24 |
-| `moderate_state.py` | `ModerateSupplyChainEnv` | `FTModerateSupplyChainEnv` | `ModerateState`, `TestModerateState` | 21 | 58 |
-| `complex_state.py` | `ComplexSupplyChainEnv` | `FTComplexSupplyChainEnv` | `ComplexState`, `TestComplexState` | 59 | 150 |
+If `data_input_v2.xlsx` is unavailable, `simple_state.py` falls back to embedded simple-network values extracted from the original workbook.
 
-The `SimpleState`, `ModerateState`, and `ComplexState` aliases are stochastic training variants. The `TestSimpleState`, `TestModerateState`, and `TestComplexState` aliases are fixed-demand / fixed-cost fine-tuning variants.
+## Environment summary
 
-## Excel parameter mapping
+`simple_state.py` defines a simple multi-echelon supply-chain environment with:
 
-The environments read the following Excel sheets:
+- **7 nodes**: supplier, factories, retailers, and markets
+- **10 total edges**, of which **8 are controllable action edges**
+- **2 products**: raw and finished goods
+- **3 objectives**: profit, negative GHG emissions, and negative service-level inequality
+- **100 periods** by default
+- OR-Gym/Gymnasium-compatible `reset()` and `step()` API
 
-| Environment | Parameter sheet | Demand sheet |
-|---|---|---|
-| Simple | `Parameters_simple` | `Data Demand` |
-| Moderate | `Parameters` | `Data Demand` |
-| Complex | `Parameters_complex` | `Data Demand` |
+The raw vector reward follows the convention:
 
-The code reads:
+```python
+[profit, -emission, -service_inequality]
+```
 
-- `Cost_process` for edge movement / production costs
-- `GHG_Unit` for edge and node emissions
-- `Cost_Inv` for inventory holding costs
-- `Initial_Inv` for initial finished-goods inventory
-- `Demand A`, `Demand B`, `Demand C`, `Demand D`, `Demand E` from `Data Demand`
+This means emissions and service inequality are represented as negative rewards because the RL agent maximises all objectives. Values closer to zero are better for the second and third objectives.
 
-The number of demand columns used depends on the environment:
+Each `step()` returns both:
 
-- Simple uses `Demand A` and `Demand B`
-- Moderate uses `Demand A`, `Demand B`, and `Demand C`
-- Complex uses `Demand A` through `Demand E`
+```python
+info["mo_reward"]      # normalised vector reward used for scalarised training
+info["mo_reward_raw"]  # raw vector reward for analysis/reporting
+```
 
-If the Excel file is not found, each file falls back to embedded values extracted from the uploaded workbook. For reproducible experiments using updated data, keep `data_input_v2.xlsx` in the same folder as the `.py` files or pass its path explicitly with `input_file="..."`.
+## Main classes
+
+```python
+SimpleSupplyChainEnv      # stochastic training environment
+FTSimpleSupplyChainEnv    # fixed-demand/fixed-cost fine-tuning environment
+SimpleState               # alias for SimpleSupplyChainEnv
+TestSimpleState           # alias for FTSimpleSupplyChainEnv
+make_env                  # factory for RLlib/SB3/Gymnasium usage
+```
+
+Use `SimpleState` / `fixed_demand=False` for meta-training and `TestSimpleState` / `fixed_demand=True` for fine-tuning or deterministic evaluation.
 
 ## Installation
 
-Create and activate a Python environment:
+Create an environment with the main dependencies:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
+pip install numpy pandas openpyxl gymnasium stable-baselines3 matplotlib pygmo
 ```
 
-On Windows PowerShell:
-
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-```
-
-Install the required packages:
-
-```bash
-pip install numpy pandas openpyxl gymnasium
-```
-
-For Stable-Baselines3 training, also install:
-
-```bash
-pip install stable-baselines3
-```
-
-For RLlib training, install the Ray version used by your project, for example:
+For MIRACL meta-training with RLlib, install the Ray/RLlib version used by your project, for example:
 
 ```bash
 pip install "ray[rllib]==2.3.1"
 ```
 
-The files include a small import fallback for basic static checks, but real RL training should use `gymnasium`.
+The notebook also expects the MIRACL codebase containing:
+
+```text
+algo_ray/rllib/algorithms/maml/maml_psa.py
+```
+
+Set the base directory through the notebook or environment variable:
+
+```bash
+export MIRACL_BASE_DIR=/home/rifnyrachman7/_metamorl
+export ORGYM_ENV_DIR=/path/to/folder/containing/simple_state.py
+```
 
 ## Quick smoke test
 
-From the folder containing the files, run:
+Run from the directory containing `simple_state.py`:
 
 ```bash
 python simple_state.py
-python moderate_state.py
-python complex_state.py
 ```
 
-Expected output should look similar to:
+Expected output includes the action and observation space shapes, plus one sample reward:
 
 ```text
-simple_state.py: action_space= (8,) observation_space= (24,)
-step reward= ... mo_reward= ... terminated= False
-
-moderate_state.py: action_space= (21,) observation_space= (58,)
-step reward= ... mo_reward= ... terminated= False
-
-complex_state.py: action_space= (59,) observation_space= (150,)
-step reward= ... mo_reward= ... terminated= False
+simple_state.py: action_space= ... observation_space= ...
+step reward= ... mo_reward= ... terminated= ...
 ```
 
-This checks that each file imports correctly, loads the Excel parameters or embedded fallback values, resets the environment, samples one action, and performs one step.
-
-## Basic usage
-
-### Simple environment
+You can also test inside Python:
 
 ```python
-from simple_state import SimpleState, TestSimpleState
+from simple_state import make_env
 
-# Stochastic meta-training variant
-env = SimpleState(input_file="data_input_v2.xlsx", seed=0)
-
+env = make_env({"fixed_demand": True, "num_periods": 100, "seed": 0})
 obs, info = env.reset(seed=0)
 action = env.action_space.sample()
 obs, reward, terminated, truncated, info = env.step(action)
 
-print(obs.shape)
+print(env.action_space)
+print(env.observation_space)
 print(reward)
 print(info["mo_reward"])
 print(info["mo_reward_raw"])
 ```
 
-### Moderate environment
+## Using the environment with Stable-Baselines3
+
+For SB3 fine-tuning, use the fixed-demand environment. It is usually safer to enable normalised actions, include demand in the observation, and start debugging with non-extreme scalarisation weights.
 
 ```python
-from moderate_state import ModerateState, TestModerateState
-
-# Fixed fine-tuning variant
-env = TestModerateState(input_file="data_input_v2.xlsx", seed=0)
-
-obs, info = env.reset(seed=0)
-obs, reward, terminated, truncated, info = env.step(env.action_space.sample())
-
-print(env.action_space.shape)       # (21,)
-print(env.observation_space.shape)  # (58,)
-```
-
-### Complex environment
-
-```python
-from complex_state import ComplexState, TestComplexState
-
-env = ComplexState(input_file="data_input_v2.xlsx", seed=0)
-obs, info = env.reset(seed=0)
-obs, reward, terminated, truncated, info = env.step(env.action_space.sample())
-
-print(env.action_space.shape)       # (59,)
-print(env.observation_space.shape)  # (150,)
-```
-
-## Factory usage
-
-Each file includes a `make_env(...)` function. This is useful for RLlib or wrapper code where environments are constructed from a config dictionary.
-
-```python
+import numpy as np
+from stable_baselines3 import PPO
+from stable_baselines3.ppo.policies import MlpPolicy
+from stable_baselines3.common.monitor import Monitor
 from simple_state import make_env
 
-# Stochastic meta-training environment
-env = make_env({
-    "input_file": "data_input_v2.xlsx",
-    "fixed_demand": False,
-    "seed": 123,
-})
+NUM_PERIODS = 100
+weights = np.array([0.6, 0.2, 0.2], dtype=np.float64)
 
-# Fixed fine-tuning environment
-env_ft = make_env({
-    "input_file": "data_input_v2.xlsx",
-    "fixed_demand": True,
-    "num_periods": 100,
-    "seed": 123,
-})
-```
+def make_sb3_env(weights, seed=None):
+    env = make_env({
+        "fixed_demand": True,
+        "num_periods": NUM_PERIODS,
+        "weights": weights,
+        "seed": seed,
+        "normalize_actions": True,
+        "max_order_quantity": 200.0,
+        "include_demand_in_obs": True,
+    })
+    return Monitor(env)
 
-`num_timesteps` is also accepted as an alias for `num_periods`:
-
-```python
-env = make_env({"num_timesteps": 100, "fixed_demand": True})
-```
-
-## Choosing training vs fine-tuning variants
-
-Use the stochastic classes for meta-training:
-
-```python
-from simple_state import SimpleState
-from moderate_state import ModerateState
-from complex_state import ComplexState
-
-env_simple = SimpleState(input_file="data_input_v2.xlsx")
-env_moderate = ModerateState(input_file="data_input_v2.xlsx")
-env_complex = ComplexState(input_file="data_input_v2.xlsx")
-```
-
-Use the fixed variants for fine-tuning / evaluation:
-
-```python
-from simple_state import TestSimpleState
-from moderate_state import TestModerateState
-from complex_state import TestComplexState
-
-env_simple_ft = TestSimpleState(input_file="data_input_v2.xlsx")
-env_moderate_ft = TestModerateState(input_file="data_input_v2.xlsx")
-env_complex_ft = TestComplexState(input_file="data_input_v2.xlsx")
-```
-
-The fixed variants use the Excel demand series and turn off per-episode cost and demand randomisation.
-
-## Important API differences from Messiah
-
-These files are Gymnasium environments. They do **not** return a Messiah `State` object through `__call__()`.
-
-Use this Gymnasium pattern instead:
-
-```python
-obs, info = env.reset(seed=0)
-obs, reward, terminated, truncated, info = env.step(action)
-```
-
-The `info` dictionary contains the multi-objective values and operational logs you usually need for MORL / MIRACL evaluation.
-
-## Reward structure
-
-The environment has three objectives:
-
-```text
-[profit, -emission, -service_inequality]
-```
-
-The scalar reward is computed as:
-
-```python
-scalar_reward = weights @ info["mo_reward"]
-```
-
-The default weights are uniform:
-
-```python
-[1/3, 1/3, 1/3]
-```
-
-You can set scalarisation weights using:
-
-```python
-env.set_scalarization_weights([0.6, 0.3, 0.1])
-print(env.get_scalarization_weights())
-```
-
-Weights are clipped to be non-negative and normalised to sum to 1.
-
-The step `info` dictionary includes:
-
-```python
-info["mo_reward"]                  # normalised vector reward
-info["mo_reward_raw"]              # raw vector reward: [profit, -emission, -inequality]
-info["weights"]                    # active scalarisation weights
-info["profit"]                     # current-step profit
-info["emission"]                   # current-step positive emission value
-info["service_inequality"]         # current-step positive inequality value
-info["cumulative_profit"]
-info["cumulative_emission"]
-info["cumulative_service_inequality"]
-info["inventory"]
-info["fulfilled"]
-info["unfulfilled"]
-info["edge_inputs"]
-info["edge_outputs"]
-```
-
-## Action format
-
-By default, actions are continuous order quantities with shape equal to the controllable edge count.
-
-```python
-action = env.action_space.sample()
-obs, reward, terminated, truncated, info = env.step(action)
-```
-
-The market-demand edges are **not** part of the action space. They are handled internally using the Excel or stochastic demand schedule.
-
-You can also pass a dictionary keyed by controllable edge name:
-
-```python
-action = {
-    "supplier0_factory1": 100,
-    "supplier0_factory2": 80,
-    "factory1_factory1": 40,
-}
-obs, reward, terminated, truncated, info = env.step(action)
-```
-
-Or by original edge index:
-
-```python
-action = {0: 100, 1: 80, 2: 40}
-obs, reward, terminated, truncated, info = env.step(action)
-```
-
-Missing controllable edges are treated as zero orders.
-
-## Normalised actions
-
-If you prefer policy outputs in `[0, 1]`, create the environment with `normalize_actions=True`:
-
-```python
-env = SimpleState(
-    input_file="data_input_v2.xlsx",
-    normalize_actions=True,
-    max_order_quantity=500,
+env = make_sb3_env(weights, seed=0)
+model = PPO(
+    MlpPolicy,
+    env,
+    learning_rate=1e-4,
+    n_steps=256,
+    batch_size=64,
+    n_epochs=10,
+    gamma=0.99,
+    gae_lambda=0.95,
+    clip_range=0.2,
+    verbose=1,
+    seed=0,
 )
-```
-
-The environment will multiply actions by `max_order_quantity` internally.
-
-## Stable-Baselines3 example
-
-```python
-from stable_baselines3 import PPO
-from stable_baselines3.common.env_checker import check_env
-from simple_state import TestSimpleState
-
-env = TestSimpleState(
-    input_file="data_input_v2.xlsx",
-    normalize_actions=True,
-    max_order_quantity=500,
-)
-
-env.set_scalarization_weights([0.6, 0.3, 0.1])
-check_env(env, warn=True)
-
-model = PPO("MlpPolicy", env, verbose=1)
 model.learn(total_timesteps=5_000)
 ```
 
-For moderate or complex environments, import `TestModerateState` or `TestComplexState` instead.
+Important: when `fixed_demand=True`, do **not** also pass `randomise_costs=False` or `randomise_demand=False` to `make_env`. The fixed-demand class already sets these internally.
 
-## RLlib example
+## Using the environment with RLlib
+
+The notebook registers two RLlib environments:
 
 ```python
+TRAIN_ENV_ID = "miracl_simple_train_orgym"
+FT_ENV_ID = "miracl_simple_ft_orgym"
+```
+
+The training environment uses stochastic demand/cost settings:
+
+```python
+from gymnasium.wrappers import TimeLimit
 from ray.tune.registry import register_env
-from ray.rllib.algorithms.ppo import PPOConfig
-from moderate_state import make_env
+from simple_state import make_env
 
-register_env("moderate_sc_orgym", lambda env_config: make_env(env_config))
+NUM_PERIODS = 100
 
-config = (
-    PPOConfig()
-    .environment(
-        env="moderate_sc_orgym",
-        env_config={
-            "input_file": "data_input_v2.xlsx",
-            "fixed_demand": False,
-            "normalize_actions": True,
-            "max_order_quantity": 500,
-        },
-    )
-    .framework("torch")
-)
+def make_train_env(env_config=None):
+    cfg = dict(env_config or {})
+    cfg.setdefault("fixed_demand", False)
+    cfg.setdefault("num_periods", NUM_PERIODS)
+    env = make_env(cfg)
+    return TimeLimit(env, max_episode_steps=cfg["num_periods"])
 
-algo = config.build()
-result = algo.train()
-print(result["episode_reward_mean"])
+register_env("miracl_simple_train_orgym", make_train_env)
 ```
 
-For fine-tuning, set `fixed_demand=True` in the `env_config`.
+Use this registered environment in the MIRACL/MAML configuration.
 
-## Task sampling for meta-learning
+## Notebook workflow
 
-The environments include lightweight task utilities:
+The notebook `metah_s2_5000ts_orgym.ipynb` is organised as follows:
+
+1. Set paths and runtime settings.
+2. Import MIRACL, RLlib, SB3, and `simple_state.py`.
+3. Run a smoke test for the OR-Gym-style environment.
+4. Register RLlib environments.
+5. Optionally run MIRACL/MAML meta-training.
+6. Optionally run SB3 fine-tuning across 21 scalarisation weights.
+7. Save and reload CSV results.
+8. Compute hypervolume, sparsity, and EUM curves.
+9. Plot performance curves.
+
+The notebook uses safety flags to avoid accidentally launching long training runs:
 
 ```python
-env = SimpleState(input_file="data_input_v2.xlsx", seed=0)
-
-tasks = env.sample_tasks(5)
-env.set_task(tasks[0])
+RUN_META_TRAINING = False
+RUN_FINE_TUNING = False
 ```
 
-Currently, `set_task(...)` applies:
+Set them to `True` only when you want to run those stages.
 
-- `task["demand"]`, if supplied
-- `task["weights"]`, if supplied
-
-This is useful for MIRACL-style task switching where each task corresponds to a demand schedule and/or scalarisation preference.
-
-Example:
+For a quick debugging run, use a small budget and balanced weights:
 
 ```python
-task = {
-    "demand": tasks[0]["demand"],
-    "weights": [0.5, 0.4, 0.1],
-}
+RUN_FINE_TUNING = True
+USE_RLLIB_WARM_START = False
 
-env.set_task(task)
-obs, info = env.reset()
+TOTAL_STEPS = 5_000
+RECORD_EVERY = 1_000
+RUNS = 1
+EVAL_EPISODES = 3
+
+ACTIVE_WEIGHT_GRID = np.array([
+    [0.8, 0.1, 0.1],
+    [0.6, 0.2, 0.2],
+    [0.4, 0.3, 0.3],
+], dtype=np.float64)
 ```
 
-## Accessing topology and Excel-derived state configuration
+Then make sure the fine-tuning loop iterates over `ACTIVE_WEIGHT_GRID` rather than the full `WEIGHT_GRID_21`.
 
-Each environment exposes a `get_state_config()` helper for backward-friendly access to topology arrays and parameters:
+## Scalarisation weights
+
+The full 21-weight grid used in the notebook is:
 
 ```python
-env = TestSimpleState(input_file="data_input_v2.xlsx")
-state_cfg = env.get_state_config()
-
-print(state_cfg["names"]["node_names"])
-print(state_cfg["edge_upstream_nodes"])
-print(state_cfg["edge_cost"])
-print(state_cfg["demand"])
+WEIGHT_GRID_21 = np.array([
+    [0.0, 0.0, 1.0], [0.0, 0.2, 0.8], [0.0, 0.4, 0.6], [0.0, 0.6, 0.4], [0.0, 0.8, 0.2],
+    [0.0, 1.0, 0.0], [0.2, 0.0, 0.8], [0.2, 0.2, 0.6], [0.2, 0.4, 0.4], [0.2, 0.6, 0.2],
+    [0.2, 0.8, 0.0], [0.4, 0.0, 0.6], [0.4, 0.2, 0.4], [0.4, 0.4, 0.2], [0.4, 0.6, 0.0],
+    [0.6, 0.0, 0.4], [0.6, 0.2, 0.2], [0.6, 0.4, 0.0], [0.8, 0.0, 0.2], [0.8, 0.2, 0.0],
+    [1.0, 0.0, 0.0],
+], dtype=np.float64)
 ```
 
-This is not a Messiah `State`, but it gives you the main topology and parameter arrays if older wrappers need them.
+For debugging, avoid starting with extreme weights such as `[0, 0, 1]`, because the policy ignores profit and emissions under that scalarisation. Use balanced weights first to verify learning behaviour.
 
-## Reproducibility
+## Evaluation
 
-Set seeds at construction and reset:
+A useful evaluator should track both normalised and raw returns:
 
 ```python
-env = ModerateState(input_file="data_input_v2.xlsx", seed=42)
-obs, info = env.reset(seed=42)
+def evaluate_model(model, weights, n_eval_episodes=3, seed=123):
+    scalar_returns = []
+    raw_returns = []
+    norm_returns = []
+
+    for ep in range(n_eval_episodes):
+        env = make_sb3_env(weights, seed=seed + ep)
+        obs, info = env.reset(seed=seed + ep)
+        done = False
+        scalar_total = 0.0
+        raw_total = np.zeros(3, dtype=np.float64)
+        norm_total = np.zeros(3, dtype=np.float64)
+
+        while not done:
+            action, _ = model.predict(obs, deterministic=True)
+            obs, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
+            scalar_total += float(reward)
+            raw_total += np.asarray(info["mo_reward_raw"], dtype=np.float64)
+            norm_total += np.asarray(info["mo_reward"], dtype=np.float64)
+
+        scalar_returns.append(scalar_total)
+        raw_returns.append(raw_total)
+        norm_returns.append(norm_total)
+
+    return {
+        "scalar_mean": float(np.mean(scalar_returns)),
+        "raw_mean": np.mean(raw_returns, axis=0),
+        "norm_mean": np.mean(norm_returns, axis=0),
+    }
 ```
 
-For fixed evaluation, use the `Test*State` classes:
+Use `raw_mean` for reporting business quantities and `norm_mean` / `scalar_mean` to diagnose whether PPO is improving the reward it actually trains on.
+
+## Common issues
+
+### `NameError: WEIGHT_GRID is not defined`
+
+The notebook uses `WEIGHT_GRID_21`, not `WEIGHT_GRID`. For debugging, define a separate grid:
 
 ```python
-env = TestModerateState(input_file="data_input_v2.xlsx", seed=42)
+ACTIVE_WEIGHT_GRID = WEIGHT_GRID_21[:3].copy()
 ```
 
-For stochastic meta-training, use the non-test classes:
+and change the fine-tuning loop to:
 
 ```python
-env = ModerateState(input_file="data_input_v2.xlsx", seed=42)
+for weight_id, weights in enumerate(ACTIVE_WEIGHT_GRID):
+    ...
 ```
 
-## Common configuration arguments
+### `TypeError: build_config() got multiple values for keyword argument 'randomise_costs'`
 
-| Argument | Meaning | Default |
-|---|---|---|
-| `input_file` | Path to `data_input_v2.xlsx` | auto-detected / embedded fallback |
-| `num_periods` | Episode length | `100` |
-| `num_timesteps` | Alias for `num_periods` in `make_env` | `100` |
-| `seed` | Random seed | `None` |
-| `fixed_demand` | Use Excel demand and fixed costs | depends on class |
-| `randomise_costs` | Randomise costs/emissions each episode | `True` for training, `False` for fixed variants |
-| `randomise_demand` | Randomise demand each episode | `True` for training, `False` for fixed variants |
-| `normalize_actions` | Use action range `[0, 1]` | `False` |
-| `max_order_quantity` | Maximum order quantity per controllable edge | `500` |
-| `backlog` | Carry unmet demand forward | `False` |
-| `shortage_penalty` | Penalty per unfulfilled unit | `1.0` |
-| `include_demand_in_obs` | Append next demand to observation | `False` |
-| `include_metrics_in_obs` | Append cumulative emission and inequality to observation | `False` |
-| `weights` | Scalarisation weights for the 3 objectives | uniform |
-| `reward_clip` | Optional `(low, high)` scalar reward clipping | `None` |
+This happens when passing `randomise_costs` or `randomise_demand` while also using `fixed_demand=True`. Remove those duplicate arguments from the notebook call.
 
-## Troubleshooting
+### Results are flat or all policies behave the same
 
-### `ModuleNotFoundError: No module named 'gymnasium'`
+Check these first:
 
-Install Gymnasium:
+- Set `normalize_actions=True`.
+- Reduce `max_order_quantity` to 100 or 200 for debugging.
+- Use balanced weights such as `[0.6, 0.2, 0.2]`.
+- Disable warm-starting first: `USE_RLLIB_WARM_START = False`.
+- Log action statistics to check whether the policy is producing non-zero actions.
+- Evaluate every 1,000 steps rather than every 250 steps when using PPO rollouts.
 
-```bash
-pip install gymnasium
-```
+### Rewards look worse because they are negative
 
-### `ImportError: Missing optional dependency 'openpyxl'`
+The raw vector is `[profit, -emission, -service_inequality]`. For the second and third objectives, values closer to zero are better. Large negative emissions or inequality values mean worse environmental or service-equity performance.
 
-Install OpenPyXL so pandas can read `.xlsx` files:
+## Reproducibility notes
 
-```bash
-pip install openpyxl
-```
+- The environment can run without `data_input_v2.xlsx` using embedded simple-network parameters.
+- If the workbook is available, place it next to `simple_state.py` or pass `input_file` to `make_env`.
+- Use fixed seeds for deterministic debugging.
+- Meta-training checkpoints are stored under `CKPT_DIR` in the notebook.
+- Fine-tuning CSVs are stored under `FT_DIR` and performance metrics under `PERF_DIR`.
 
-### Excel file not being used
-
-Pass the workbook path explicitly:
-
-```python
-env = SimpleState(input_file="/full/path/to/data_input_v2.xlsx")
-```
-
-### Old code expects `env.reset()` to return only `obs`
-
-Gymnasium returns two values:
-
-```python
-obs, info = env.reset()
-```
-
-If a legacy wrapper expects only the observation, use:
-
-```python
-obs = env.reset()[0]
-```
-
-### Old code expects four values from `step(...)`
-
-Gymnasium returns five values:
-
-```python
-obs, reward, terminated, truncated, info = env.step(action)
-done = terminated or truncated
-```
-
-### Action shape error
-
-Use the environment action space shape:
-
-```python
-print(env.action_space.shape)
-action = env.action_space.sample()
-```
-
-Expected action sizes:
-
-- Simple: `(8,)`
-- Moderate: `(21,)`
-- Complex: `(59,)`
-
-### Negative emissions in `mo_reward_raw`
-
-This is intentional. The vector reward uses a maximisation convention:
-
-```text
-[profit, -emission, -service_inequality]
-```
-
-The positive emission value is available separately as:
-
-```python
-info["emission"]
-```
-
-## Suggested project placement
-
-A clean setup for your MIRACL experiments would be:
-
-```text
-_miracl/
-├── data_input_v2.xlsx
-├── envs/
-│   ├── simple_state.py
-│   ├── moderate_state.py
-│   └── complex_state.py
-└── train.py
-```
-
-Then import with:
-
-```python
-from envs.simple_state import SimpleState, TestSimpleState
-from envs.moderate_state import ModerateState, TestModerateState
-from envs.complex_state import ComplexState, TestComplexState
-```
-
-If `envs/` is not already a package, add an empty file:
-
-```bash
-touch envs/__init__.py
-```
-
-## Minimal end-to-end example
-
-```python
-from simple_state import TestSimpleState
-
-weights = [0.5, 0.3, 0.2]
-
-env = TestSimpleState(
-    input_file="data_input_v2.xlsx",
-    normalize_actions=True,
-    max_order_quantity=500,
-    seed=0,
-)
-env.set_scalarization_weights(weights)
-
-obs, info = env.reset(seed=0)
-done = False
-episode_return = 0.0
-vector_return = [0.0, 0.0, 0.0]
-
-while not done:
-    action = env.action_space.sample()
-    obs, reward, terminated, truncated, info = env.step(action)
-    done = terminated or truncated
-    episode_return += reward
-    vector_return = [a + b for a, b in zip(vector_return, info["mo_reward_raw"])]
-
-print("scalar return:", episode_return)
-print("raw vector return [profit, -emission, -inequality]:", vector_return)
-print("final cumulative profit:", info["cumulative_profit"])
-print("final cumulative emission:", info["cumulative_emission"])
-print("final cumulative inequality:", info["cumulative_service_inequality"])
-```
