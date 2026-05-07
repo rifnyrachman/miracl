@@ -24,13 +24,13 @@ The repository includes:
 
 ## Important note on executability
 
-> ⚠️ The supply chain environment depends on the proprietary `messiah` module, developed in collaboration with Peak AI Ltd. Due to confidentiality restrictions, this module cannot be released publicly.
+> ⚠️ The supply chain environment depends on the proprietary `messiah` module, developed in collaboration with industrial partner. Due to confidentiality restrictions, this module cannot be released publicly.
 
-As a result, the full supply chain experiments are **not directly executable** without access to `messiah`.
+As a result, the full supply chain experiments are **not directly executable** without access to `messiah`. Researchers may adapt the algorithm to open environments such as **OR-Gym (provided in this repository)** or other Gymnasium-compatible supply chain simulators.
 
 However, the repository still provides the main algorithmic logic, environment interfaces, training structure, and evaluation workflow for inspection, adaptation, and reproducibility guidance. The simple environment is included as a template, while the moderate and complex environments follow the same structure with different network scales and parameter settings.
 
-Researchers may adapt the algorithm to open environments such as OR-Gym or other Gymnasium-compatible supply chain simulators.
+
 
 ## Repository structure
 
